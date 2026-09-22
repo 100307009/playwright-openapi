@@ -1,0 +1,20 @@
+node_modules/
+
+# env - never commit real secrets
+.env
+.env.local
+
+# playwright / test output
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/allure-results/
+/allure-report/
+/.cache/
+
+# generated from the live spec by `npm run types:generate` (also runs pretest) - see README
+/src/types/*.d.ts
+
+# misc
+*.log
+.DS_Store
