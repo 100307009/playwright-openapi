@@ -1,5 +1,5 @@
 import { fetchAndCacheSpec } from '../src/spec/loadSpec';
-import { ApiVersion, getVersionConfig } from '../src/config/env';
+import { getApiConfig } from '../src/config/env';
 
 /**
  * `fixtureIds.existingPetId` (see .env.example) is meant to be a pet that's always there on the
@@ -14,45 +14,38 @@ import { ApiVersion, getVersionConfig } from '../src/config/env';
  * pulled from .env should never be assumed to be permanent unless something in the run actually
  * guarantees it.
  */
-async function ensurePetFixtureExists(version: ApiVersion): Promise<void> {
-  const config = getVersionConfig(version);
+async function ensurePetFixtureExists(): Promise<void> {
+  const config = getApiConfig();
   if (!config) return;
 
   const petId = config.fixtures.existingPetId;
   const check = await fetch(`${config.baseUrl}/pet/${petId}`);
   if (check.ok) return;
 
-  console.log(`[global-setup] Fixture pet ${petId} not found on ${version} (shared demo data can disappear) - recreating it.`);
+  console.log(`[global-setup] Fixture pet ${petId} not found (shared demo data can disappear) - recreating it.`);
   const seed = await fetch(`${config.baseUrl}/pet`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: Number(petId), name: 'fixture-pet', photoUrls: [], status: 'available' }),
   });
   if (!seed.ok) {
-    console.warn(
-      `[global-setup] Could not recreate fixture pet ${petId} on ${version} (status ${seed.status}) - tests relying on it may fail.`,
-    );
+    console.warn(`[global-setup] Could not recreate fixture pet ${petId} (status ${seed.status}) - tests relying on it may fail.`);
   }
 }
 
 /**
  * Runs once before the whole test run (all projects). Fetches and caches the
- * OpenAPI spec for every configured version so:
+ * OpenAPI spec so:
  *  - we fail fast, once, if the spec host is unreachable, instead of every test doing it
  *  - every test in the run validates against the exact same spec snapshot
  */
 export default async function globalSetup(): Promise<void> {
-  const versions = ['v1', 'v2'] as const;
-  const configured = versions.filter((v) => getVersionConfig(v));
-
-  if (configured.length === 0) {
-    throw new Error('No API version is configured. Set at least API_V2_* in .env (see .env.example).');
+  const config = getApiConfig();
+  if (!config) {
+    throw new Error('API is not configured. Set API_BASE_URL and API_SPEC_URL in .env (see .env.example).');
   }
 
-  for (const version of configured) {
-    const config = getVersionConfig(version)!;
-    console.log(`[global-setup] Fetching OpenAPI spec for ${version} from ${config.specUrl}`);
-    await fetchAndCacheSpec(version);
-    await ensurePetFixtureExists(version);
-  }
+  console.log(`[global-setup] Fetching OpenAPI spec from ${config.specUrl}`);
+  await fetchAndCacheSpec();
+  await ensurePetFixtureExists();
 }

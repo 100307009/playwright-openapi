@@ -1,6 +1,5 @@
 import Ajv, { ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
-import { ApiVersion } from '../config/env';
 import { loadCachedSpec, OpenApiDocument } from './loadSpec';
 
 export interface OperationSelector {
@@ -59,15 +58,18 @@ function toJsonSchema(node: unknown): unknown {
   return schema;
 }
 
-const ajvByVersion = new Map<ApiVersion, Ajv>();
+let ajv: Ajv | undefined;
 const validatorCache = new Map<string, ValidateFunction | null>();
+const compileErrorCache = new Map<string, string>();
 
-function getAjv(version: ApiVersion): Ajv {
-  let ajv = ajvByVersion.get(version);
+function getAjv(): Ajv {
   if (!ajv) {
+    // strict: false - real OpenAPI schemas carry vendor keywords Ajv doesn't recognize (xml,
+    // example, discriminator, ...); strict mode throws on those at compile time regardless of
+    // whether the schema is otherwise valid. This is about tolerating OpenAPI's schema dialect,
+    // not about loosening what gets validated - required/type/format checks below are unaffected.
     ajv = new Ajv({ strict: false, allErrors: true });
     addFormats(ajv);
-    ajvByVersion.set(version, ajv);
   }
   return ajv;
 }
@@ -78,12 +80,8 @@ function findOperation(spec: OpenApiDocument, method: string, templatePath: stri
   return pathItem[method.toLowerCase()];
 }
 
-export function validateResponse(
-  version: ApiVersion,
-  selector: OperationSelector,
-  body: unknown,
-): SchemaValidationResult {
-  const spec = loadCachedSpec(version);
+export function validateResponse(selector: OperationSelector, body: unknown): SchemaValidationResult {
+  const spec = loadCachedSpec();
   const operation = findOperation(spec, selector.method, selector.path);
 
   if (!operation) {
@@ -92,7 +90,7 @@ export function validateResponse(
       statusDocumented: false,
       schemaDocumented: false,
       valid: false,
-      errors: [`${selector.method} ${selector.path} is not documented in the ${version} OpenAPI spec at all.`],
+      errors: [`${selector.method} ${selector.path} is not documented in the OpenAPI spec at all.`],
     };
   }
 
@@ -137,16 +135,19 @@ export function validateResponse(
     };
   }
 
-  const cacheKey = `${version}:${selector.method}:${selector.path}:${statusKey}`;
+  const cacheKey = `${selector.method}:${selector.path}:${statusKey}`;
   let validateFn = validatorCache.get(cacheKey);
   if (validateFn === undefined) {
+    let compileError: string | undefined;
     try {
-      validateFn = getAjv(version).compile(toJsonSchema(schema) as object);
+      validateFn = getAjv().compile(toJsonSchema(schema) as object);
     } catch (err) {
       validateFn = null;
+      compileError = err instanceof Error ? err.message : String(err);
       console.error(`[schemaValidator] Failed to compile schema for ${cacheKey}:`, err);
     }
     validatorCache.set(cacheKey, validateFn);
+    if (compileError) compileErrorCache.set(cacheKey, compileError);
   }
 
   if (!validateFn) {
@@ -155,7 +156,7 @@ export function validateResponse(
       statusDocumented,
       schemaDocumented: true,
       valid: false,
-      errors: [`Schema for ${cacheKey} failed to compile - see console output.`],
+      errors: [`Schema for ${selector.method} ${selector.path} -> ${statusKey} failed to compile: ${compileErrorCache.get(cacheKey)}`],
       schema,
     };
   }

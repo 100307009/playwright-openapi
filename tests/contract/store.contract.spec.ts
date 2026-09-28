@@ -1,31 +1,75 @@
 import { test, expect } from '../../src/fixtures';
-import { randomId } from '../../src/utils/testData';
+import { buildPath } from '../../src/utils/buildPath';
+import { buildTemplateContext, resolveRecord, resolveQueryParams, resolveBody } from '../../src/testData/templateContext';
+import { storeGetScenarios, storePostScenarios } from '../../src/testData/store.testData';
+import { login } from '../../src/steps/auth.steps';
 
 /**
- * As of this writing, the public Petstore v3 demo's /store/* endpoints
- * consistently return 500 (a server-side issue on the demo itself, not
- * something wrong with this suite - verified by hand with plain curl before
- * writing these tests). We assert that observed reality rather than the
- * spec's happy path, so the suite reports true upstream status instead of
- * masking it. Point API_V2_BASE_URL at a healthy backend and these same
- * assertions are exactly what you'd flip back to the 200+schema case.
+ * See tests/contract/pet.contract.spec.ts for what a contract test checks and how the
+ * scenario-loop pattern works. Scenarios live in src/testData/store.testData.ts.
  */
 test.describe('Contract: /store', () => {
-  test('GET /store/inventory - currently 500 upstream (known live-demo issue)', async ({ apiClient, validateSchema }) => {
-    const response = await apiClient.get('/store/inventory');
+  test.describe('GET', () => {
+    for (const scenario of storeGetScenarios) {
+      test(scenario.name, async ({ apiClient, validateSchema, apiConfig, credentials }) => {
+        const ctx = buildTemplateContext(apiConfig);
 
-    const result = await validateSchema({ method: 'GET', path: '/store/inventory', status: response.status }, response.body);
-    expect(response.status).toBe(500);
-    expect(result.statusDocumented).toBe(false);
+        if (scenario.requiresAuth) {
+          await login(apiClient, credentials.valid);
+        }
+
+        const setupResult = scenario.setup ? await scenario.setup({ apiClient }) : undefined;
+        try {
+          const pathParams = { ...resolveRecord(scenario.pathParams, ctx), ...setupResult?.pathParams };
+          const path = buildPath(scenario.path, pathParams);
+
+          const response = await apiClient.get(path, {
+            params: resolveQueryParams(scenario.queryParams, ctx),
+            headers: resolveRecord(scenario.headers, ctx),
+          });
+          expect(response.status).toBe(scenario.expectedStatus);
+
+          if (scenario.expectValidSchema !== undefined) {
+            const result = await validateSchema({ method: 'GET', path: scenario.path, status: response.status }, response.body);
+            expect(result.valid).toBe(scenario.expectValidSchema);
+          }
+        } finally {
+          await setupResult?.teardown?.();
+        }
+      });
+    }
   });
 
-  test('POST /store/order - currently 500 upstream (known live-demo issue)', async ({ apiClient, validateSchema }) => {
-    const response = await apiClient.post('/store/order', {
-      data: { id: randomId(), petId: 1, quantity: 1, status: 'placed', complete: true },
-    });
+  test.describe('POST', () => {
+    for (const scenario of storePostScenarios) {
+      test(scenario.name, async ({ apiClient, validateSchema, apiConfig, credentials }) => {
+        const ctx = buildTemplateContext(apiConfig);
 
-    const result = await validateSchema({ method: 'POST', path: '/store/order', status: response.status }, response.body);
-    expect(response.status).toBe(500);
-    expect(result.statusDocumented).toBe(false);
+        if (scenario.requiresAuth) {
+          await login(apiClient, credentials.valid);
+        }
+
+        const setupResult = scenario.setup ? await scenario.setup({ apiClient }) : undefined;
+        try {
+          const pathParams = { ...resolveRecord(scenario.pathParams, ctx), ...setupResult?.pathParams };
+          const path = buildPath(scenario.path, pathParams);
+          const body = setupResult?.body ?? resolveBody(scenario.body);
+
+          const response = await apiClient.post(path, {
+            params: resolveQueryParams(scenario.queryParams, ctx),
+            headers: resolveRecord(scenario.headers, ctx),
+            data: body,
+          });
+          expect(response.status).toBe(scenario.expectedStatus);
+
+          if (scenario.expectValidSchema !== undefined) {
+            const result = await validateSchema({ method: 'POST', path: scenario.path, status: response.status }, response.body);
+            expect(result.valid).toBe(scenario.expectValidSchema);
+          }
+        } finally {
+          await setupResult?.teardown?.();
+        }
+      });
+    }
   });
 });

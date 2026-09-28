@@ -1,4 +1,4 @@
-import type { components } from '../types/api-v2';
+import type { components } from '../types/api';
 
 // Typed against the spec-generated Pet shape (see scripts/generateTypes.ts) so a field rename
 // or a newly-required property in the spec breaks this at compile time, not at test run time.

@@ -1,19 +1,12 @@
 import { defineConfig } from '@playwright/test';
 import { getUiBaseUrl } from './src/config/env';
-import type { TestOptions } from './src/fixtures';
 
 /**
- * Every API version gets its own project per test type, all pointed at the
- * same test files. Version-specific behaviour (base URL, spec, credentials,
- * fixture IDs) flows in entirely through the `apiVersion` fixture option
- * (see src/fixtures/index.ts) - test code never branches on version itself.
- *
- * To add a new version once its spec/backend exists:
- *   1. Fill in API_<VERSION>_* in .env (see .env.example)
- *   2. Copy the *-v2 project blocks below, swap `apiVersion: 'v2'` -> the new version
- * No test file needs to change.
+ * One Playwright project per test type (contract/flow/UI), all sharing the same fixture layer
+ * (see src/fixtures/index.ts) - a credential or endpoint change in .env propagates to all three
+ * automatically.
  */
-export default defineConfig<TestOptions>({
+export default defineConfig({
   testDir: './tests',
   globalSetup: require.resolve('./tests/global-setup.ts'),
   fullyParallel: true,
@@ -33,36 +26,20 @@ export default defineConfig<TestOptions>({
   },
   projects: [
     {
-      name: 'contract-v2',
+      name: 'contract',
       testDir: './tests/contract',
-      use: { apiVersion: 'v2' },
     },
     {
-      name: 'flow-v2',
+      name: 'flow',
       testDir: './tests/flow',
-      use: { apiVersion: 'v2' },
     },
     {
-      name: 'ui-v2',
+      name: 'ui',
       testDir: './tests/ui',
       use: {
-        apiVersion: 'v2',
-        baseURL: getUiBaseUrl('v2'),
+        baseURL: getUiBaseUrl(),
         browserName: 'chromium',
       },
     },
-
-    // --- v1 (not wired up yet) -------------------------------------------
-    // Once API_V1_SPEC_URL / API_V1_BASE_URL are set in .env, uncomment:
-    // {
-    //   name: 'contract-v1',
-    //   testDir: './tests/contract',
-    //   use: { apiVersion: 'v1' },
-    // },
-    // {
-    //   name: 'flow-v1',
-    //   testDir: './tests/flow',
-    //   use: { apiVersion: 'v1' },
-    // },
   ],
 });

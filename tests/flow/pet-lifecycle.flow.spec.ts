@@ -1,6 +1,6 @@
 import { test, expect } from '../../src/fixtures';
 import { randomPetPayload } from '../../src/utils/testData';
-import type { components } from '../../src/types/api-v2';
+import type { components } from '../../src/types/api';
 
 type Pet = components['schemas']['Pet'];
 
